@@ -11,7 +11,7 @@ st.set_page_config(
 )
 
 st.title("🏠 房價估價系統（文字版）｜依據 114 年 不動產成交資料")
-st.caption("CatBoost + Conformal 90% 區間 + 可解釋 AI（SHAP）")
+st.caption("CatBoost + 可解釋 AI（SHAP）")  # 修改為 CatBoost
 
 # =========================
 # 行政區對照表
@@ -134,8 +134,7 @@ CITY_TOWN_MAP = {
 # =========================
 @st.cache_resource
 def load_predictor():
-    # 若 .pkl 內未存區間半徑，預設使用 ±10.0 萬/坪（可自行修改為實際校準半徑）
-    return HousePricePredictor(default_radius=10.0)
+    return HousePricePredictor()
 
 
 predictor = load_predictor()
@@ -155,9 +154,12 @@ building_type = st.sidebar.selectbox(
 )
 main_use = st.sidebar.selectbox("主要用途", ["住家用", "商業用", "住商用"])
 building_age = st.sidebar.number_input("屋齡（年）", 0, 80, 20)
+
+# 新增：建物總面積 (平方公尺)
 building_area_sqm = st.sidebar.number_input(
     "建物總面積（平方公尺）", 10.0, 500.0, 100.0
 )
+
 main_area = st.sidebar.number_input("主建物面積（坪）", 5.0, 100.0, 30.0)
 balcony_area = st.sidebar.number_input("陽台面積（坪）", 0.0, 20.0, 5.0)
 floor = st.sidebar.number_input("所在樓層", 1, 100, 5)
@@ -173,7 +175,7 @@ case_dict = {
     "building_type": building_type,
     "main_use": main_use,
     "building_age": building_age,
-    "building_area_sqm": building_area_sqm,
+    "building_area_sqm": building_area_sqm,  # 納入傳遞給模型
     "main_area": main_area,
     "balcony_area": balcony_area,
     "floor": floor,
@@ -230,8 +232,8 @@ if st.session_state.result is not None:
 
     if ci_lower is not None and ci_upper is not None:
         st.success(
-            f"💰 模型最終預估單價：約 **{pred_price:.1f} 萬 / 坪** ｜ "
-            f"90% 信賴區間：**{ci_lower:.1f} ～ {ci_upper:.1f} 萬 / 坪**"
+            f"💰 模型預估單價約 **{pred_price:.1f} 萬 / 坪**，"
+            f"90% 信賴區間為 **{ci_lower:.1f} ～ {ci_upper:.1f} 萬 / 坪**。"
         )
     else:
         st.success(
