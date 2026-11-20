@@ -1,9 +1,6 @@
 import streamlit as st
 from predict import HousePricePredictor
 
-# =========================
-# 頁面設定
-# =========================
 st.set_page_config(
     page_title="房價估價系統",
     page_icon="🏠",
@@ -11,11 +8,8 @@ st.set_page_config(
 )
 
 st.title("🏠 房價估價系統（文字版）｜依據 114 年 不動產成交資料")
-st.caption("CatBoost + 可解釋 AI（SHAP）")  # 修改為 CatBoost
+st.caption("CatBoost + Conformal 90% 區間 + 可解釋 AI（SHAP）")
 
-# =========================
-# 行政區對照表
-# =========================
 CITY_TOWN_MAP = {
     "臺北市": [
         "士林區", "大同區", "大安區", "中山區", "中正區", "內湖區",
@@ -129,19 +123,14 @@ CITY_TOWN_MAP = {
 }
 
 
-# =========================
-# 載入模型
-# =========================
 @st.cache_resource
 def load_predictor():
+    # 若你的 .pkl 裡沒有存 90% 區間半徑，可在此填入數值，例如 HousePricePredictor(default_radius=8.0)
     return HousePricePredictor()
 
 
 predictor = load_predictor()
 
-# =========================
-# 側邊欄輸入
-# =========================
 st.sidebar.header("📋 房屋基本資料")
 
 city = st.sidebar.selectbox("縣市", list(CITY_TOWN_MAP.keys()))
@@ -154,12 +143,9 @@ building_type = st.sidebar.selectbox(
 )
 main_use = st.sidebar.selectbox("主要用途", ["住家用", "商業用", "住商用"])
 building_age = st.sidebar.number_input("屋齡（年）", 0, 80, 20)
-
-# 新增：建物總面積 (平方公尺)
 building_area_sqm = st.sidebar.number_input(
     "建物總面積（平方公尺）", 10.0, 500.0, 100.0
 )
-
 main_area = st.sidebar.number_input("主建物面積（坪）", 5.0, 100.0, 30.0)
 balcony_area = st.sidebar.number_input("陽台面積（坪）", 0.0, 20.0, 5.0)
 floor = st.sidebar.number_input("所在樓層", 1, 100, 5)
@@ -167,15 +153,12 @@ total_floors = st.sidebar.number_input("總樓層數", 1, 100, 10)
 has_parking = st.sidebar.radio("是否有車位", ["有", "無"])
 has_elevator = st.sidebar.radio("是否有電梯", ["有", "無"])
 
-# =========================
-# 組合輸入資料
-# =========================
 case_dict = {
     "district": district,
     "building_type": building_type,
     "main_use": main_use,
     "building_age": building_age,
-    "building_area_sqm": building_area_sqm,  # 納入傳遞給模型
+    "building_area_sqm": building_area_sqm,
     "main_area": main_area,
     "balcony_area": balcony_area,
     "floor": floor,
@@ -184,9 +167,6 @@ case_dict = {
     "has_elevator": 1 if has_elevator == "有" else 0,
 }
 
-# =========================
-# 主畫面
-# =========================
 st.subheader("📊 預測結果（文字版）")
 
 if "result" not in st.session_state:
@@ -196,9 +176,6 @@ if st.button("🚀 開始估價"):
     with st.spinner("模型預測中，請稍候..."):
         st.session_state.result = predictor.predict(case_dict)
 
-# =========================
-# 顯示文字結果
-# =========================
 if st.session_state.result is not None:
     result = st.session_state.result
     pred_price = result["predicted_price"]
