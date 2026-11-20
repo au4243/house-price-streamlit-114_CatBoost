@@ -1,6 +1,9 @@
 import streamlit as st
 from predict import HousePricePredictor
 
+# =========================
+# 頁面設定
+# =========================
 st.set_page_config(
     page_title="房價估價系統",
     page_icon="🏠",
@@ -10,6 +13,9 @@ st.set_page_config(
 st.title("🏠 房價估價系統（文字版）｜依據 114 年 不動產成交資料")
 st.caption("CatBoost + Conformal 90% 區間 + 可解釋 AI（SHAP）")
 
+# =========================
+# 行政區對照表
+# =========================
 CITY_TOWN_MAP = {
     "臺北市": [
         "士林區", "大同區", "大安區", "中山區", "中正區", "內湖區",
@@ -123,14 +129,20 @@ CITY_TOWN_MAP = {
 }
 
 
+# =========================
+# 載入模型
+# =========================
 @st.cache_resource
 def load_predictor():
-    # 若你的 .pkl 裡沒有存 90% 區間半徑，可在此填入數值，例如 HousePricePredictor(default_radius=8.0)
-    return HousePricePredictor()
+    # 若 .pkl 內未存區間半徑，預設使用 ±10.0 萬/坪（可自行修改為實際校準半徑）
+    return HousePricePredictor(default_radius=10.0)
 
 
 predictor = load_predictor()
 
+# =========================
+# 側邊欄輸入
+# =========================
 st.sidebar.header("📋 房屋基本資料")
 
 city = st.sidebar.selectbox("縣市", list(CITY_TOWN_MAP.keys()))
@@ -153,6 +165,9 @@ total_floors = st.sidebar.number_input("總樓層數", 1, 100, 10)
 has_parking = st.sidebar.radio("是否有車位", ["有", "無"])
 has_elevator = st.sidebar.radio("是否有電梯", ["有", "無"])
 
+# =========================
+# 組合輸入資料
+# =========================
 case_dict = {
     "district": district,
     "building_type": building_type,
@@ -167,6 +182,9 @@ case_dict = {
     "has_elevator": 1 if has_elevator == "有" else 0,
 }
 
+# =========================
+# 主畫面
+# =========================
 st.subheader("📊 預測結果（文字版）")
 
 if "result" not in st.session_state:
@@ -176,6 +194,9 @@ if st.button("🚀 開始估價"):
     with st.spinner("模型預測中，請稍候..."):
         st.session_state.result = predictor.predict(case_dict)
 
+# =========================
+# 顯示文字結果
+# =========================
 if st.session_state.result is not None:
     result = st.session_state.result
     pred_price = result["predicted_price"]
@@ -209,8 +230,8 @@ if st.session_state.result is not None:
 
     if ci_lower is not None and ci_upper is not None:
         st.success(
-            f"💰 模型預估單價約 **{pred_price:.1f} 萬 / 坪**，"
-            f"90% 信賴區間為 **{ci_lower:.1f} ～ {ci_upper:.1f} 萬 / 坪**。"
+            f"💰 模型最終預估單價：約 **{pred_price:.1f} 萬 / 坪** ｜ "
+            f"90% 信賴區間：**{ci_lower:.1f} ～ {ci_upper:.1f} 萬 / 坪**"
         )
     else:
         st.success(

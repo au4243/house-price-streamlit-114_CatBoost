@@ -6,10 +6,10 @@ import pandas as pd
 
 
 class HousePricePredictor:
-    def __init__(self, default_radius=None):
+    def __init__(self, default_radius=10.0, fallback_ratio=None):
         """
-        default_radius: 若模型檔中未儲存 conformal 區間半徑，可傳入備援數值（單位：萬/坪），
-                        例如 default_radius=8.0；若為 None 則顯示尚未設定。
+        default_radius: 若模型檔中未存區間半徑，預設誤差半徑（單位：萬/坪），例如 10.0。
+        fallback_ratio: 若想改用「預測單價 * 比例」當作半徑，可設例如 0.12（代表 ±12%），此時會優先於 default_radius。
         """
         base_dir = os.path.dirname(__file__)
         model_path = os.path.join(base_dir, "catboost_conformal_house_price_model.pkl")
@@ -22,9 +22,11 @@ class HousePricePredictor:
 
         self.model = joblib.load(model_path)
         self.model_features = joblib.load(feature_path)
+        self.default_radius = default_radius
+        self.fallback_ratio = fallback_ratio
 
         extracted_radius = self._extract_conformal_radius(self.model)
-        self.conformal_radius = extracted_radius if extracted_radius is not None else default_radius
+        self.conformal_radius = extracted_radius
 
         # 自動尋找實際的模型物件（CatBoostRegressor）
         actual_model = self.model
@@ -88,6 +90,7 @@ class HousePricePredictor:
         if feature.startswith("main_use_"):
             return f"主要用途為「{feature.replace('main_use_', '')}」"
         HUMAN_MAP = {
+            "building_area_sqm": f"建物總面積約 {value:.1f} 平方公尺",
             "main_area": f"主建物面積約 {value:.1f} 坪",
             "balcony_area": f"陽台面積約 {value:.1f} 坪",
             "building_age": f"屋齡約 {int(value)} 年",
@@ -123,13 +126,20 @@ class HousePricePredictor:
 
         explanation_lines.append(f"\n➡️ 綜合以上因素後，模型推估本案合理單價約為 {pred:.1f} 萬 / 坪。")
 
+        # 決定 90% 信賴區間半徑（優先順序：模型內建值 > 比例估算 > 預設半徑）
+        radius = self.conformal_radius
+        if radius is None and self.fallback_ratio is not None:
+            radius = pred * float(self.fallback_ratio)
+        if radius is None and self.default_radius is not None:
+            radius = float(self.default_radius)
+
         lower_bound = None
         upper_bound = None
-        if self.conformal_radius is not None:
-            lower_bound = max(0.0, pred - self.conformal_radius)
-            upper_bound = pred + self.conformal_radius
+        if radius is not None:
+            lower_bound = max(0.0, pred - radius)
+            upper_bound = pred + radius
             explanation_lines.append(
-                f"📊 90% 信賴區間：約 {lower_bound:.1f} ～ {upper_bound:.1f} 萬 / 坪（±{self.conformal_radius:.1f} 萬 / 坪）。"
+                f"📊 90% 信賴區間：約 {lower_bound:.1f} ～ {upper_bound:.1f} 萬 / 坪（±{radius:.1f} 萬 / 坪）。"
             )
         else:
             explanation_lines.append("📊 90% 信賴區間：尚未設定區間半徑。")
@@ -138,6 +148,6 @@ class HousePricePredictor:
             "predicted_price": pred,
             "ci_90_lower": lower_bound,
             "ci_90_upper": upper_bound,
-            "ci_90_radius": self.conformal_radius,
+            "ci_90_radius": radius,
             "explanation": "\n".join(explanation_lines),
         }
