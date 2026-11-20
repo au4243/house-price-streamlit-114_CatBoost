@@ -7,7 +7,7 @@ import pandas as pd
 
 class HousePricePredictor:
     # 若模型檔內未附帶 Split Conformal 校準半徑（q_hat），使用的預設半徑（萬/坪）
-    DEFAULT_Q90_RADIUS = 12.0
+    DEFAULT_Q90_RADIUS = 10.0
 
     def __init__(self, q90_radius: float | None = None):
         base_dir = os.path.dirname(os.path.abspath(__file__))

@@ -1,9 +1,9 @@
 import streamlit as st
 
 try:
-    from prediction import HousePricePredictor
-except ImportError:
     from predict import HousePricePredictor
+except ImportError:
+    from prediction import HousePricePredictor
 
 # =========================
 # 頁面設定
@@ -11,7 +11,22 @@ except ImportError:
 st.set_page_config(
     page_title="房價估價系統",
     page_icon="🏠",
-    layout="centered",
+    layout="wide",
+)
+
+# 避免 st.metric 數值過長時被省略號（....）截斷
+st.markdown(
+    """
+    <style>
+    [data-testid="stMetricValue"] {
+        font-size: 1.8rem !important;
+        white-space: nowrap !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 st.title("🏠 房價估價系統｜依據 114 年不動產成交資料")
@@ -123,6 +138,7 @@ CITY_TOWN_MAP = {
     ],
 }
 
+# 建物型態完整選項（對應模型特徵欄位名稱）
 BUILDING_TYPES = [
     "住宅大樓(11層含以上有電梯)",
     "華廈(10層含以下有電梯)",
@@ -135,6 +151,7 @@ BUILDING_TYPES = [
     "其他",
 ]
 
+# 主要用途完整選項（對應模型特徵欄位名稱）
 MAIN_USES = [
     "住家用",
     "住商用",
@@ -149,6 +166,12 @@ MAIN_USES = [
     "農業用",
     "其他",
 ]
+
+
+def _fmt_num(val: float) -> str:
+    """若四捨五入到小數一位後為整數（如 113.0）則顯示 113，否則顯示一位小數（如 93.8）"""
+    rounded = round(float(val), 1)
+    return f"{int(rounded)}" if rounded.is_integer() else f"{rounded:.1f}"
 
 
 # =========================
@@ -175,6 +198,7 @@ building_type = st.sidebar.selectbox("建物型態", BUILDING_TYPES)
 main_use = st.sidebar.selectbox("主要用途", MAIN_USES)
 building_age = st.sidebar.number_input("屋齡（年）", min_value=0, max_value=80, value=15)
 
+# 坪數與平方公尺連動參考（1 坪 ≈ 3.305785 平方公尺）
 building_area_ping = st.sidebar.number_input(
     "建物總面積（坪）", min_value=3.0, max_value=300.0, value=30.0, step=0.5
 )
@@ -227,20 +251,21 @@ if st.session_state.result is not None:
     ci_radius = result.get("ci_90_radius")
     confidence_pct = result.get("confidence_pct", 90)
 
+    # 計算總價參考（萬）
     est_total_price = pred_price * building_area_ping
 
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric(
             label="💰 預估單價",
-            value=f"{pred_price:.1f} 萬/坪",
+            value=f"{_fmt_num(pred_price)} 萬/坪",
         )
     with col2:
         if ci_lower is not None and ci_upper is not None:
             st.metric(
                 label=f"📊 {confidence_pct}% 預測區間",
-                value=f"{ci_lower:.1f} ～ {ci_upper:.1f} 萬/坪",
-                delta=f"±{ci_radius:.1f} 萬/坪" if ci_radius is not None else None,
+                value=f"{_fmt_num(ci_lower)}~{_fmt_num(ci_upper)}萬/坪",
+                delta=f"±{_fmt_num(ci_radius)}萬/坪" if ci_radius is not None else None,
                 delta_color="off",
             )
         else:
@@ -256,10 +281,10 @@ if st.session_state.result is not None:
         total_upper = ci_upper * building_area_ping
         st.markdown("#### 📈 90% 信賴/預測區間數值明細")
         st.write(
-            f"- **預估單價**：**{pred_price:.2f} 萬 / 坪**\n"
-            f"- **90% 區間下界（5% 分位）**：**{ci_lower:.2f} 萬 / 坪**（參考總價約 **{total_lower:,.0f} 萬**）\n"
-            f"- **90% 區間上界（95% 分位）**：**{ci_upper:.2f} 萬 / 坪**（參考總價約 **{total_upper:,.0f} 萬**）\n"
-            f"- **區間半徑（±）**：**±{ci_radius:.2f} 萬 / 坪**"
+            f"- **預估單價**：**{_fmt_num(pred_price)} 萬/坪**\n"
+            f"- **90% 區間下界（5% 分位）**：**{_fmt_num(ci_lower)} 萬/坪**（參考總價約 **{total_lower:,.0f} 萬**）\n"
+            f"- **90% 區間上界（95% 分位）**：**{_fmt_num(ci_upper)} 萬/坪**（參考總價約 **{total_upper:,.0f} 萬**）\n"
+            f"- **區間半徑（±）**：**±{_fmt_num(ci_radius)} 萬/坪**"
         )
 
     st.markdown("### 📝 中文估價說明（SHAP 歸因分析）")
@@ -267,8 +292,8 @@ if st.session_state.result is not None:
 
     if ci_lower is not None and ci_upper is not None:
         st.success(
-            f"💰 模型預估單價約 **{pred_price:.1f} 萬 / 坪**，"
-            f"{confidence_pct}% 預測區間為 **{ci_lower:.1f} ～ {ci_upper:.1f} 萬 / 坪**。"
+            f"💰 模型預估單價約 **{_fmt_num(pred_price)} 萬/坪**，"
+            f"{confidence_pct}% 預測區間為 **{_fmt_num(ci_lower)}~{_fmt_num(ci_upper)}萬/坪**。"
         )
 else:
     st.info("👈 請先填寫左側房屋資料，並點擊「🚀 開始估價」")
