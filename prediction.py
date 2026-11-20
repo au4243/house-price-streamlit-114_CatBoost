@@ -7,10 +7,6 @@ import pandas as pd
 
 class HousePricePredictor:
     def __init__(self, default_radius=10.0, fallback_ratio=None):
-        """
-        default_radius: 若模型檔中未存區間半徑，預設誤差半徑（單位：萬/坪），例如 10.0。
-        fallback_ratio: 若想改用「預測單價 * 比例」當作半徑，可設例如 0.12（代表 ±12%），此時會優先於 default_radius。
-        """
         base_dir = os.path.dirname(__file__)
         model_path = os.path.join(base_dir, "catboost_conformal_house_price_model.pkl")
         feature_path = os.path.join(base_dir, "model_features.pkl")
@@ -28,7 +24,7 @@ class HousePricePredictor:
         extracted_radius = self._extract_conformal_radius(self.model)
         self.conformal_radius = extracted_radius
 
-        # 自動尋找實際的模型物件（CatBoostRegressor）
+        # 自動尋找實際的模型物件
         actual_model = self.model
         if isinstance(self.model, dict):
             for key in ["base_model", "model", "regressor", "estimator", "catboost", "predictor"]:
@@ -46,10 +42,18 @@ class HousePricePredictor:
             actual_model = actual_model.model
 
         self.actual_model = actual_model
-        self.explainer = shap.TreeExplainer(actual_model)
+        self.explainer = self._init_explainer(actual_model)
+
+    def _init_explainer(self, model_obj):
+        try:
+            return shap.TreeExplainer(model_obj)
+        except Exception:
+            try:
+                return shap.Explainer(model_obj.predict, pd.DataFrame([ {c: 0 for c in self.model_features} ]))
+            except Exception:
+                return None
 
     def _extract_conformal_radius(self, model_obj):
-        """嘗試從模型字典或物件中取得 90% 信賴/預測區間的半徑"""
         candidate_keys = [
             "q_hat_90", "q90", "q_hat", "conformal_q", "quantile_90",
             "radius_90", "margin_90", "margin", "interval_radius", "delta_90"
@@ -103,30 +107,29 @@ class HousePricePredictor:
 
     def predict(self, case_dict):
         X = self._align_features(case_dict)
-
         pred = float(self.actual_model.predict(X)[0])
 
-        shap_values = self.explainer(X)
-        shap_vals = shap_values.values[0]
-        feature_names = X.columns
-        base_value = float(np.mean(self.explainer.expected_value))
+        explanation_lines = []
+        if self.explainer is not None:
+            shap_values = self.explainer(X)
+            shap_vals = shap_values.values[0]
+            feature_names = X.columns
+            base_value = float(np.mean(self.explainer.expected_value)) if hasattr(self.explainer, "expected_value") else pred
 
-        explanation_lines = [f"📌 模型基準單價約為 {base_value:.1f} 萬 / 坪，以下條件使價格進行調整："]
-
-        idx_sorted = np.argsort(np.abs(shap_vals))[-10:][::-1]
-        for i in idx_sorted:
-            feat = feature_names[i]
-            val = X.iloc[0][feat]
-            shap_val = float(shap_vals[i])
-            if val == 0 and feat.startswith(("district_", "building_type_", "main_use_")):
-                continue
-            human_text = self._feature_to_human(feat, val)
-            direction = "推升" if shap_val > 0 else "下修"
-            explanation_lines.append(f"👉 {human_text}，使單價約 {direction} {abs(shap_val):.1f} 萬 / 坪")
+            explanation_lines.append(f"📌 模型基準單價約為 {base_value:.1f} 萬 / 坪，以下條件使價格進行調整：")
+            idx_sorted = np.argsort(np.abs(shap_vals))[-10:][::-1]
+            for i in idx_sorted:
+                feat = feature_names[i]
+                val = X.iloc[0][feat]
+                shap_val = float(shap_vals[i])
+                if val == 0 and feat.startswith(("district_", "building_type_", "main_use_")):
+                    continue
+                human_text = self._feature_to_human(feat, val)
+                direction = "推升" if shap_val > 0 else "下修"
+                explanation_lines.append(f"👉 {human_text}，使單價約 {direction} {abs(shap_val):.1f} 萬 / 坪")
 
         explanation_lines.append(f"\n➡️ 綜合以上因素後，模型推估本案合理單價約為 {pred:.1f} 萬 / 坪。")
 
-        # 決定 90% 信賴區間半徑（優先順序：模型內建值 > 比例估算 > 預設半徑）
         radius = self.conformal_radius
         if radius is None and self.fallback_ratio is not None:
             radius = pred * float(self.fallback_ratio)
@@ -141,8 +144,6 @@ class HousePricePredictor:
             explanation_lines.append(
                 f"📊 90% 信賴區間：約 {lower_bound:.1f} ～ {upper_bound:.1f} 萬 / 坪（±{radius:.1f} 萬 / 坪）。"
             )
-        else:
-            explanation_lines.append("📊 90% 信賴區間：尚未設定區間半徑。")
 
         return {
             "predicted_price": pred,
